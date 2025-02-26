@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-const config = require("./config.json");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const express = require("express");
@@ -15,7 +14,13 @@ const { authenticateToken } = require("./utilities");
 const User = require("./models/user.model");
 const TravelStory = require("./models/travelStory.model");
 
-mongoose.connect(config.connectionString);
+// Connect to MongoDB using MONGO_URI from .env
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log("Connected to MongoDB"))
+  .catch(err => console.error("MongoDB connection error:", err));
 
 const app = express();
 app.use(express.json());
@@ -51,9 +56,7 @@ app.post("/create-account", async (req, res) => {
   const accessToken = jwt.sign(
     { userId: user._id },
     process.env.ACCESS_TOKEN_SECRET,
-    {
-      expiresIn: "72h",
-    }
+    { expiresIn: "72h" }
   );
 
   return res.status(201).json({
@@ -85,9 +88,7 @@ app.post("/login", async (req, res) => {
   const accessToken = jwt.sign(
     { userId: user._id },
     process.env.ACCESS_TOKEN_SECRET,
-    {
-      expiresIn: "72h",
-    }
+    { expiresIn: "72h" }
   );
 
   return res.json({
@@ -123,7 +124,7 @@ app.post("/image-upload", upload.single("image"), async (req, res) => {
         .json({ error: true, message: "No image uploaded" });
     }
 
-    const imageUrl = `http://localhost:8000/uploads/${req.file.filename}`;
+    const imageUrl = `http://localhost:${process.env.PORT || 8000}/uploads/${req.file.filename}`;
 
     res.status(200).json({ imageUrl });
   } catch (error) {
@@ -142,15 +143,10 @@ app.delete("/delete-image", async (req, res) => {
   }
 
   try {
-    // Extract the filename from the imageUrl
     const filename = path.basename(imageUrl);
-
-    // Define the file path
     const filePath = path.join(__dirname, "uploads", filename);
 
-    // Check if the file exists
     if (fs.existsSync(filePath)) {
-      // Delete the file from the uploads folder
       fs.unlinkSync(filePath);
       res.status(200).json({ message: "Image deleted successfully" });
     } else {
@@ -165,19 +161,20 @@ app.delete("/delete-image", async (req, res) => {
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
+app.get('/test', (req, res) => {
+  res.status(200).json({ message: 'Server is up and running!' });
+});
 // Add Travel Story
 app.post("/add-travel-story", authenticateToken, async (req, res) => {
   const { title, story, visitedLocation, imageUrl, visitedDate } = req.body;
   const { userId } = req.user;
 
-  // Validate required fields
   if (!title || !story || !visitedLocation || !imageUrl || !visitedDate) {
     return res
       .status(400)
       .json({ error: true, message: "All fields are required" });
   }
 
-  // Convert visitedDate from milliseconds to Date object
   const parsedVisitedDate = new Date(parseInt(visitedDate));
 
   try {
@@ -202,9 +199,7 @@ app.get("/get-all-stories", authenticateToken, async (req, res) => {
   const { userId } = req.user;
 
   try {
-    const travelStories = await TravelStory.find({ userId: userId }).sort({
-      isFavourite: -1,
-    });
+    const travelStories = await TravelStory.find({ userId: userId }).sort({ isFavourite: -1 });
     res.status(200).json({ stories: travelStories });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
@@ -217,18 +212,15 @@ app.put("/edit-story/:id", authenticateToken, async (req, res) => {
   const { title, story, visitedLocation, imageUrl, visitedDate } = req.body;
   const { userId } = req.user;
 
-  // Validate required fields
   if (!title || !story || !visitedLocation || !visitedDate) {
     return res
       .status(400)
       .json({ error: true, message: "All fields are required" });
   }
 
-  // Convert visitedDate from milliseconds to Date object
   const parsedVisitedDate = new Date(parseInt(visitedDate));
 
   try {
-    // Find the travel story by ID and ensure it belongs to the authenticated user
     const travelStory = await TravelStory.findOne({ _id: id, userId: userId });
 
     if (!travelStory) {
@@ -237,7 +229,7 @@ app.put("/edit-story/:id", authenticateToken, async (req, res) => {
         .json({ error: true, message: "Travel story not found" });
     }
 
-    const placeholderImgUrl = `http://localhost:8000/assets/placeholder.png`;
+    const placeholderImgUrl = `http://localhost:${process.env.PORT || 8000}/assets/placeholder.png`;
 
     travelStory.title = title;
     travelStory.story = story;
@@ -258,7 +250,6 @@ app.delete("/delete-story/:id", authenticateToken, async (req, res) => {
   const { userId } = req.user;
 
   try {
-    // Find the travel story by ID and ensure it belongs to the authenticated user
     const travelStory = await TravelStory.findOne({ _id: id, userId: userId });
 
     if (!travelStory) {
@@ -267,22 +258,15 @@ app.delete("/delete-story/:id", authenticateToken, async (req, res) => {
         .json({ error: true, message: "Travel story not found" });
     }
 
-    // Delete the travel story from the database
     await travelStory.deleteOne({ _id: id, userId: userId });
 
-    // Extract the filename from the imageUrl
     const imageUrl = travelStory.imageUrl;
     const filename = path.basename(imageUrl);
-
-    // Define the file path
     const filePath = path.join(__dirname, "uploads", filename);
 
-    // Delete the image file from the uploads folder
     fs.unlink(filePath, (err) => {
       if (err) {
         console.error("Failed to delete image file:", err);
-        // Optionally, you could still respond with a success status here
-        // if you don't want to treat this as a critical error.
       }
     });
 
@@ -347,21 +331,24 @@ app.get("/travel-stories/filter", authenticateToken, async (req, res) => {
   const { userId } = req.user;
 
   try {
-    // Convert startDate and endDate from milliseconds to Date objects
     const start = new Date(parseInt(startDate));
     const end = new Date(parseInt(endDate));
 
-    // Find travel stories that belong to the authenticated user and fall within the date range
     const filteredStories = await TravelStory.find({
       userId: userId,
       visitedDate: { $gte: start, $lte: end },
     }).sort({ isFavourite: -1 });
 
-    res.status(200).json({stories: filteredStories});
+    res.status(200).json({ stories: filteredStories });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
 
-app.listen(8000);
+// Start the server on the port from .env or default to 8000
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 module.exports = app;

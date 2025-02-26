@@ -21,6 +21,7 @@ const App = () => {
   )
 }
 
+
 // Define the Root component to handle the initial redirect
 const Root = () => {
   // Check if token exists in localStorage
